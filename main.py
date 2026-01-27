@@ -10,59 +10,48 @@ from io import BytesIO
 st.set_page_config(page_title="Oracle HCM Bulk User Creator", layout="wide")
 st.title("👤 Oracle HCM Bulk User Creator")
 
-# --- UI Layout ---
-col1, col2 = st.columns([1, 1])
-
-with col1:
-    st.subheader("🌐 Connection Details")
-    env_url = st.text_input("Environment URL", "https://iavnqy-dev2.fa.ocs.oraclecloud.com")
-    username = st.text_input("Admin Username")
-    password = st.text_input("Admin Password", type="password")
-
-with col2:
-    st.subheader("📁 Data Upload")
-    
-    # Template Download Logic
-    template_df = pd.DataFrame(columns=['USER NAME', 'FIRST NAME', 'LAST NAME', 'WORK EMAIL'])
-    template_buffer = BytesIO()
-    with pd.ExcelWriter(template_buffer, engine='xlsxwriter') as writer:
-        template_df.to_excel(writer, index=False)
-    
-    st.download_button(
-        label="📥 Download Excel Template",
-        data=template_buffer.getvalue(),
-        file_name="Oracle_User_Template.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-    
-    uploaded_file = st.file_uploader("Upload Completed Excel", type=["xlsx"])
-
 # --- Logic Functions ---
 
-def create_bulk_users(env_url, admin_user, admin_pwd, df):
-    """Executes Bulk POST via SCIM REST API to create users."""
+def generate_secure_password(length=12):
+    """Generates a single secure password for the entire batch."""
+    upper = string.ascii_uppercase
+    lower = string.ascii_lowercase
+    digits = string.digits
+    special = "!#$%"
+    all_chars = upper + lower + digits + special
+    
+    pwd = [
+        secrets.choice(upper),
+        secrets.choice(lower),
+        secrets.choice(digits),
+        secrets.choice(special)
+    ]
+    pwd += [secrets.choice(all_chars) for _ in range(length - 4)]
+    secrets.SystemRandom().shuffle(pwd)
+    return "".join(pwd)
+
+def create_bulk_users(env_url, admin_user, admin_pwd, df, common_pwd):
+    """Executes Bulk POST via SCIM REST API using a common password."""
     scim_url = env_url.rstrip("/") + "/hcmRestApi/scim/Bulk"
     
     operations = []
-    
+
     for index, row in df.iterrows():
-        # Mapping Excel columns to SCIM JSON Structure
-        # We use .get() to avoid KeyErrors and strip() to clean data
         u_name = str(row['USER NAME']).strip()
         f_name = str(row['FIRST NAME']).strip()
         l_name = str(row['LAST NAME']).strip()
         email = str(row['WORK EMAIL']).strip()
-
+        
         user_op = {
             "method": "POST",
             "path": "/Users",
-            "bulkId": f"user_{index}",
+            "bulkId": u_name,
             "data": {
                 "schemas": ["urn:scim:schemas:core:2.0:User"],
                 "userName": u_name,
                 "name": {
                     "familyName": l_name,
-                    "givenName": f_name # You can concatenate Middle Name here if added to Excel
+                    "givenName": f_name
                 },
                 "emails": [{
                     "primary": True,
@@ -70,7 +59,7 @@ def create_bulk_users(env_url, admin_user, admin_pwd, df):
                     "type": "W"
                 }],
                 "active": True,
-                "password": "Welcome1"
+                "password": common_pwd  # Using the common batch password
             }
         }
         operations.append(user_op)
@@ -89,7 +78,34 @@ def create_bulk_users(env_url, admin_user, admin_pwd, df):
     )
     return response
 
-# --- Main Logic ---
+# --- UI Layout ---
+col1, col2 = st.columns([1, 1])
+
+with col1:
+    st.subheader("🌐 Connection Details")
+    env_url = st.text_input("Environment URL", "https://iavnqy-dev2.fa.ocs.oraclecloud.com")
+    username = st.text_input("Admin Username")
+    password = st.text_input("Admin Password", type="password")
+
+with col2:
+    st.subheader("📁 Data Upload")
+    
+    # Template Generation
+    template_df = pd.DataFrame(columns=['USER NAME', 'FIRST NAME', 'LAST NAME', 'WORK EMAIL'])
+    template_buffer = BytesIO()
+    with pd.ExcelWriter(template_buffer, engine='xlsxwriter') as writer:
+        template_df.to_excel(writer, index=False)
+    
+    st.download_button(
+        label="📥 Download Excel Template",
+        data=template_buffer.getvalue(),
+        file_name="Oracle_User_Template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    
+    uploaded_file = st.file_uploader("Upload Completed Excel", type=["xlsx"])
+
+# --- Execution ---
 
 if st.button("🚀 Create Bulk Users"):
     if not (username and password and uploaded_file):
@@ -97,39 +113,49 @@ if st.button("🚀 Create Bulk Users"):
     else:
         try:
             df = pd.read_excel(uploaded_file)
-            # Standardize columns to Upper Case
             df.columns = [c.strip().upper() for c in df.columns]
             
             required_cols = ['USER NAME', 'FIRST NAME', 'LAST NAME', 'WORK EMAIL']
             
             if all(col in df.columns for col in required_cols):
-                with st.spinner("📡 Sending Bulk Request to Oracle HCM..."):
-                    res = create_bulk_users(env_url, username, password, df)
+                # Generate the one-time common password for this session
+                batch_password = generate_secure_password()
+                
+                with st.spinner("📡 Processing Bulk User Creation..."):
+                    res = create_bulk_users(env_url, username, password, df, batch_password)
                     
                     if res.status_code in [200, 201]:
-                        st.success("🎊 Bulk Creation Processed!")
+                        st.success("🎊 Process Complete!")
+                        st.info(f"🔑 **Common Password Set for All Users:** `{batch_password}`")
                         
                         results = res.json().get("Operations", [])
-                        status_rows = []
-                        for i, op in enumerate(results):
-                            status_code = str(op.get("status", {}).get("code", "N/A"))
-                            # Extract error message if it failed
-                            error_msg = op.get("response", {}).get("detail", "") if not status_code.startswith("2") else ""
+                        display_data = []
+                        
+                        for op in results:
+                            u_id = op.get("bulkId")
+                            status_code = str(op.get("status", {}).get("code", ""))
                             
-                            status_rows.append({
-                                "User Name": df.iloc[i]['USER NAME'],
-                                "Status": status_code,
-                                "Outcome": "✅ Created" if status_code.startswith("2") else f"❌ Failed: {error_msg}"
+                            if status_code.startswith("2"):
+                                outcome = "✅ User Created Successfully"
+                            elif status_code == "409":
+                                outcome = "❌ Failed: User already exists"
+                            else:
+                                detail = op.get("response", {}).get("detail", "Unknown Error")
+                                outcome = f"❌ Failed: {detail}"
+                            
+                            display_data.append({
+                                "USER NAME": u_id,
+                                "OUTCOME": outcome
                             })
-                        st.table(pd.DataFrame(status_rows))
+                        
+                        st.table(pd.DataFrame(display_data))
                     else:
-                        st.error(f"❌ API Connection Error: {res.status_code}")
-                        st.json(res.json()) # Show full error for debugging
+                        st.error(f"❌ Connection Failed: {res.status_code}")
             else:
-                st.error(f"❌ Missing columns. Required: {required_cols}")
+                st.error(f"❌ Missing columns: {required_cols}")
         
         except Exception as e:
-            st.error(f"🔥 An error occurred: {e}")
+            st.error(f"🔥 Error: {e}")
 
 # Footer
 st.markdown("""
