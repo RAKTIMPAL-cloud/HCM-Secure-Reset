@@ -8,8 +8,8 @@ import string
 import secrets
 
 # --- App Configuration ---
-st.set_page_config(page_title="Oracle HCM: Create & Assign Roles", layout="wide")
-st.title("🚀 Oracle HCM: Bulk User & Role Management")
+st.set_page_config(page_title="Oracle HCM: User & Multi-Role Creator", layout="wide")
+st.title("👤 Oracle HCM: Bulk User & Multi-Role Management")
 
 # --- Logic Functions ---
 
@@ -23,10 +23,10 @@ def generate_secure_password(length=12):
 
 def fetch_guids_via_soap(env_url, admin_user, admin_pwd, usernames, roles):
     full_url = env_url.rstrip("/") + "/xmlpserver/services/ExternalReportWSSService"
-    report_path = "/Custom/Human Capital Management/PASSWORD/User_Role_GUID_Report.xdo"
+    report_path = "/Custom/Human Capital Management/User_Role_GUID_Report.xdo"
     
-    user_str = ",".join(filter(None, usernames))
-    role_str = ",".join(filter(None, roles))
+    user_str = ",".join(filter(None, set(usernames))) # Unique usernames
+    role_str = ",".join(filter(None, set(roles)))     # Unique roles
 
     soap_request = f"""
     <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService">
@@ -79,47 +79,51 @@ with col1:
 
 with col2:
     st.subheader("📁 Data")
+    # Matching your provided Excel structure
     template_df = pd.DataFrame(columns=['USER NAME', 'FIRST NAME', 'LAST NAME', 'WORK EMAIL', 'ROLE TO BE ASSIGNED'])
     tmp_buff = BytesIO()
     with pd.ExcelWriter(tmp_buff, engine='xlsxwriter') as writer:
         template_df.to_excel(writer, index=False)
-    st.download_button("📥 Download Template", tmp_buff.getvalue(), "User_Role_Template.xlsx")
-    uploaded_file = st.file_uploader("Upload Completed Excel", type=["xlsx"])
+    st.download_button("📥 Download Template", tmp_buff.getvalue(), "Oracle_User_Role_Template.xlsx")
+    uploaded_file = st.file_uploader("Upload Excel", type=["xlsx"])
 
 # --- Execution ---
-if st.button("🚀 Execute Bulk Create & Assign"):
+if st.button("🚀 Process Bulk Creation & Assignments"):
     if not (username and password and uploaded_file):
-        st.warning("Please fill all details.")
+        st.warning("Please fill all details and upload the Excel.")
     else:
         try:
             df = pd.read_excel(uploaded_file)
             df.columns = [c.strip().upper() for c in df.columns]
             common_pwd = generate_secure_password()
             
-            # PHASE 1: CREATE USERS
+            # Identify unique users for Phase 1
+            unique_users_df = df.drop_duplicates(subset=['USER NAME'])
+            
+            # --- PHASE 1: CREATE USERS ---
             user_ops = []
-            for _, row in df.iterrows():
+            for _, row in unique_users_df.iterrows():
                 user_ops.append({
                     "method": "POST", "path": "/Users", "bulkId": str(row['USER NAME']),
                     "data": {
                         "schemas": ["urn:scim:schemas:core:2.0:User"],
-                        "userName": str(row['USER NAME']),
-                        "name": {"familyName": str(row['LAST NAME']), "givenName": str(row['FIRST NAME'])},
-                        "emails": [{"primary": True, "value": str(row['WORK EMAIL']), "type": "W"}],
+                        "userName": str(row['USER NAME']).strip(),
+                        "name": {"familyName": str(row['LAST NAME']).strip(), "givenName": str(row['FIRST NAME']).strip()},
+                        "emails": [{"primary": True, "value": str(row['WORK EMAIL']).strip(), "type": "W"}],
                         "active": True, "password": common_pwd
                     }
                 })
             
-            with st.spinner("⏳ Phase 1: Creating Users in Oracle..."):
+            with st.spinner(f"⏳ Phase 1: Creating {len(user_ops)} Unique Users..."):
                 res_users = execute_scim_bulk(env_url, username, password, user_ops)
             
             if res_users.status_code in [200, 201]:
-                st.success(f"✅ Users created. Temporary Password: `{common_pwd}`")
+                st.success(f"✅ Users processed. Temporary Password: `{common_pwd}`")
                 
-                # PHASE 2: FETCH GUIDs
-                with st.spinner("⏳ Phase 2: Resolving internal GUIDs..."):
+                # --- PHASE 2: FETCH GUIDs ---
+                with st.spinner("⏳ Phase 2: Resolving GUIDs for Users and Roles..."):
                     all_usernames = df['USER NAME'].astype(str).tolist()
-                    all_roles = df['ROLE TO BE ASSIGNED'].astype(str).unique().tolist()
+                    all_roles = df['ROLE TO BE ASSIGNED'].astype(str).tolist()
                     csv_data = fetch_guids_via_soap(env_url, username, password, all_usernames, all_roles)
                     
                 if csv_data:
@@ -129,43 +133,42 @@ if st.button("🚀 Execute Bulk Create & Assign"):
                     user_guid_lookup = guid_map_df[guid_map_df['TYPE'] == 'USER'].set_index('SEARCH_KEY')['GUID'].to_dict()
                     role_guid_lookup = guid_map_df[guid_map_df['TYPE'] == 'ROLE'].set_index('SEARCH_KEY')['GUID'].to_dict()
 
-                    # PHASE 3: ASSIGN ROLES
+                    # --- PHASE 3: ASSIGN ROLES ---
                     role_ops = []
                     summary_results = []
                     
                     for _, row in df.iterrows():
-                        u_name = str(row['USER NAME'])
-                        r_name = str(row['ROLE TO BE ASSIGNED'])
+                        u_name = str(row['USER NAME']).strip()
+                        r_name = str(row['ROLE TO BE ASSIGNED']).strip()
                         u_guid = user_guid_lookup.get(u_name)
                         r_guid = role_guid_lookup.get(r_name)
                         
-                        status = "✅ Success"
                         if u_guid and r_guid:
                             role_ops.append({
                                 "method": "PATCH",
                                 "path": f"/Roles/{r_guid}",
-                                "bulkId": f"assign_{u_name}",
+                                "bulkId": f"assign_{u_name}_{secrets.token_hex(4)}",
                                 "data": {"members": [{"value": u_guid, "operation": "ADD"}]}
                             })
+                            summary_results.append({"USER NAME": u_name, "ROLE": r_name, "OUTCOME": "✅ Assignment Sent"})
                         else:
-                            status = "❌ Failed: GUID not found"
-                        
-                        summary_results.append({"USER NAME": u_name, "ROLE": r_name, "OUTCOME": status})
+                            fail_reason = "User GUID Missing" if not u_guid else "Role GUID Missing"
+                            summary_results.append({"USER NAME": u_name, "ROLE": r_name, "OUTCOME": f"❌ Failed ({fail_reason})"})
                     
                     if role_ops:
-                        with st.spinner("⏳ Phase 3: Assigning Roles..."):
+                        with st.spinner(f"⏳ Phase 3: Sending {len(role_ops)} Role Assignments..."):
                             res_roles = execute_scim_bulk(env_url, username, password, role_ops)
                             if res_roles.status_code in [200, 201]:
-                                st.success("✅ Role assignments processed!")
+                                st.success("✅ Bulk Role assignments completed!")
                     
                     st.divider()
-                    st.subheader("📋 Execution Summary")
+                    st.subheader("📋 Final Summary")
                     st.table(pd.DataFrame(summary_results))
                 else:
-                    st.error("BIP Report returned no data. Check your SQL and parameters.")
+                    st.error("BIP Report returned no data. Ensure report path and SQL are correct.")
             else:
-                st.error(f"User creation failed: {res_users.text}")
+                st.error(f"Phase 1 failed: {res_users.text}")
         except Exception as e:
-            st.error(f"An error occurred: {e}")
+            st.error(f"System Error: {e}")
 
 st.markdown("<hr><div style='text-align: center; color: yellow;'>Developed by <b>Raktim Pal</b></div>", unsafe_allow_html=True)
