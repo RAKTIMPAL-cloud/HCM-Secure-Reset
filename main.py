@@ -4,6 +4,7 @@ import pandas as pd
 import json
 import string
 import secrets
+from io import BytesIO
 
 # --- App Configuration ---
 st.set_page_config(page_title="Oracle HCM Bulk User Creator", layout="wide")
@@ -20,51 +21,56 @@ with col1:
 
 with col2:
     st.subheader("📁 Data Upload")
-    uploaded_file = st.file_file_uploader("Upload Excel File", type=["xlsx"])
-    st.caption("Required Columns: USER NAME, FIRST NAME, LAST NAME, WORK EMAIL")
+    
+    # Template Download Logic
+    template_df = pd.DataFrame(columns=['USER NAME', 'FIRST NAME', 'LAST NAME', 'WORK EMAIL'])
+    template_buffer = BytesIO()
+    with pd.ExcelWriter(template_buffer, engine='xlsxwriter') as writer:
+        template_df.to_excel(writer, index=False)
+    
+    st.download_button(
+        label="📥 Download Excel Template",
+        data=template_buffer.getvalue(),
+        file_name="Oracle_User_Template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    
+    uploaded_file = st.file_uploader("Upload Completed Excel", type=["xlsx"])
 
 # --- Logic Functions ---
-
-def generate_secure_password(length=12):
-    """Generates a secure password meeting Oracle standard policy."""
-    alphabet = string.ascii_letters + string.digits + "!#$%"
-    pwd = [
-        secrets.choice(string.ascii_uppercase),
-        secrets.choice(string.ascii_lowercase),
-        secrets.choice(string.digits),
-        secrets.choice("!#$%")
-    ]
-    pwd += [secrets.choice(alphabet) for _ in range(length - 4)]
-    secrets.SystemRandom().shuffle(pwd)
-    return "".join(pwd)
 
 def create_bulk_users(env_url, admin_user, admin_pwd, df):
     """Executes Bulk POST via SCIM REST API to create users."""
     scim_url = env_url.rstrip("/") + "/hcmRestApi/scim/Bulk"
-    temp_password = "Welcome1"  # Or use generate_secure_password()
     
     operations = []
     
     for index, row in df.iterrows():
         # Mapping Excel columns to SCIM JSON Structure
+        # We use .get() to avoid KeyErrors and strip() to clean data
+        u_name = str(row['USER NAME']).strip()
+        f_name = str(row['FIRST NAME']).strip()
+        l_name = str(row['LAST NAME']).strip()
+        email = str(row['WORK EMAIL']).strip()
+
         user_op = {
             "method": "POST",
             "path": "/Users",
             "bulkId": f"user_{index}",
             "data": {
                 "schemas": ["urn:scim:schemas:core:2.0:User"],
-                "userName": str(row['USER NAME']).strip(),
+                "userName": u_name,
                 "name": {
-                    "familyName": str(row['LAST NAME']).strip(),
-                    "givenName": str(row['FIRST NAME']).strip()
+                    "familyName": l_name,
+                    "givenName": f_name # You can concatenate Middle Name here if added to Excel
                 },
                 "emails": [{
                     "primary": True,
-                    "value": str(row['WORK EMAIL']).strip(),
+                    "value": email,
                     "type": "W"
                 }],
                 "active": True,
-                "password": temp_password
+                "password": "Welcome1"
             }
         }
         operations.append(user_op)
@@ -90,37 +96,37 @@ if st.button("🚀 Create Bulk Users"):
         st.warning("⚠️ Please provide credentials and upload an Excel file.")
     else:
         try:
-            # Read Excel
             df = pd.read_excel(uploaded_file)
-            
-            # Clean column names (remove leading/trailing spaces)
+            # Standardize columns to Upper Case
             df.columns = [c.strip().upper() for c in df.columns]
             
             required_cols = ['USER NAME', 'FIRST NAME', 'LAST NAME', 'WORK EMAIL']
+            
             if all(col in df.columns for col in required_cols):
-                
                 with st.spinner("📡 Sending Bulk Request to Oracle HCM..."):
                     res = create_bulk_users(env_url, username, password, df)
                     
                     if res.status_code in [200, 201]:
                         st.success("🎊 Bulk Creation Processed!")
                         
-                        # Parse results
                         results = res.json().get("Operations", [])
                         status_rows = []
                         for i, op in enumerate(results):
                             status_code = str(op.get("status", {}).get("code", "N/A"))
+                            # Extract error message if it failed
+                            error_msg = op.get("response", {}).get("detail", "") if not status_code.startswith("2") else ""
+                            
                             status_rows.append({
-                                "Row": i + 1,
                                 "User Name": df.iloc[i]['USER NAME'],
-                                "HTTP Status": status_code,
-                                "Outcome": "✅ Created" if status_code.startswith("2") else "❌ Failed"
+                                "Status": status_code,
+                                "Outcome": "✅ Created" if status_code.startswith("2") else f"❌ Failed: {error_msg}"
                             })
                         st.table(pd.DataFrame(status_rows))
                     else:
-                        st.error(f"❌ API Error: {res.status_code} - {res.text}")
+                        st.error(f"❌ API Connection Error: {res.status_code}")
+                        st.json(res.json()) # Show full error for debugging
             else:
-                st.error(f"❌ Missing columns. Please ensure the file has: {', '.join(required_cols)}")
+                st.error(f"❌ Missing columns. Required: {required_cols}")
         
         except Exception as e:
             st.error(f"🔥 An error occurred: {e}")
@@ -128,8 +134,8 @@ if st.button("🚀 Create Bulk Users"):
 # Footer
 st.markdown("""
 <hr style="margin-top: 50px;">
-<div style='text-align: center; color: #888; font-size: 0.85em;'>
-    <p>App developed by <strong>Raktim Pal</strong></p>
+<div style='text-align: center; color: yellow; font-size: 0.85em;'>
+    <p>App has been developed by <strong>Raktim Pal</strong></p>
     <p>© 2026 Raktim Pal. All rights reserved.</p>
 </div>
 """, unsafe_allow_html=True)
