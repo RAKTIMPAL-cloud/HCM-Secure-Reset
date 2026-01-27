@@ -23,7 +23,7 @@ def generate_secure_password(length=12):
 
 def fetch_guids_via_soap(env_url, admin_user, admin_pwd, usernames, roles):
     full_url = env_url.rstrip("/") + "/xmlpserver/services/ExternalReportWSSService"
-    report_path = "/Custom/Human Capital Management/User_Role_GUID_Report.xdo"
+    report_path = "/Custom/Human Capital Management/PASSWORD/User_Role_GUID_Report.xdo"
     
     user_str = ",".join(filter(None, set(usernames))) # Unique usernames
     role_str = ",".join(filter(None, set(roles)))     # Unique roles
