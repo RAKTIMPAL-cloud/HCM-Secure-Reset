@@ -15,7 +15,7 @@ st.title("👤 Oracle HCM: Bulk User & Role Management")
 
 def generate_secure_password(length=12):
     alphabet = string.ascii_letters + string.digits + "!#$%"
-    pwd = [secrets.choice(string.ascii_uppercase), secrets.choice(string.ascii_lowercase),
+    pwd = [secrets.choice(string.ascii_uppercase), secrets.choice(string.choice(string.ascii_lowercase)),
            secrets.choice(string.digits), secrets.choice("!#$%")]
     pwd += [secrets.choice(alphabet) for _ in range(length - 4)]
     secrets.SystemRandom().shuffle(pwd)
@@ -25,7 +25,6 @@ def fetch_guids_via_soap(env_url, admin_user, admin_pwd, usernames, roles):
     full_url = env_url.rstrip("/") + "/xmlpserver/services/ExternalReportWSSService"
     report_path = "/Custom/Human Capital Management/PASSWORD/User_Role_GUID_Report.xdo"
     
-    # Clean and unique lists for parameters
     user_str = ",".join(filter(None, set([str(u).strip() for u in usernames])))
     role_str = ",".join(filter(None, set([str(r).strip() for r in roles])))
 
@@ -74,7 +73,7 @@ def execute_scim_bulk(env_url, admin_user, admin_pwd, operations):
     except Exception as e:
         return str(e)
 
-# --- UI ---
+# --- UI Layout ---
 col1, col2 = st.columns(2)
 with col1:
     st.subheader("🌐 Connection")
@@ -84,7 +83,21 @@ with col1:
 
 with col2:
     st.subheader("📁 Data")
-    uploaded_file = st.file_uploader("Upload Excel", type=["xlsx"])
+    
+    # Template Generation Logic
+    template_df = pd.DataFrame(columns=['USER NAME', 'FIRST NAME', 'LAST NAME', 'WORK EMAIL', 'ROLE TO BE ASSIGNED'])
+    tmp_buff = BytesIO()
+    with pd.ExcelWriter(tmp_buff, engine='xlsxwriter') as writer:
+        template_df.to_excel(writer, index=False)
+    
+    # Download and Upload Buttons
+    st.download_button(
+        label="📥 Download Template",
+        data=tmp_buff.getvalue(),
+        file_name="User_Role_Template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    uploaded_file = st.file_uploader("Upload Completed Excel", type=["xlsx"])
 
 # --- Processing ---
 if st.button("🚀 Process Bulk Operations"):
@@ -162,25 +175,24 @@ if st.button("🚀 Process Bulk Operations"):
                         for item in tracking_list:
                             if item["B_ID"] in r_results:
                                 code = r_results[item["B_ID"]]
-                                # Per your findings: 204 is used for both new and existing roles
                                 item["ROLE_STATUS"] = "✅ Processed" if code == "204" else f"❌ Error {code}"
 
             # --- DISPLAY RESULTS ---
             st.divider()
             st.subheader("📋 Final Execution Summary")
-            #st.info(f"🔑 Temporary Password: `{common_pwd}`")
-            # Replace your current password display line with this:
+            
+            # Highlighted Password Block
             st.markdown(
                 f"""
-                <div style="background-color:#FFF3CD; padding:10px; border-radius:10px; border: 2px solid #FFEEBA;">
-                    <h4 style="color:#856404; margin:0;">🔑 Temporary Password: 
-                        <span style="background-color:#FFFF00; color:black; padding:2px 5px; border-radius:4px;">{common_pwd}</span>
+                <div style="background-color:#FFF3CD; padding:15px; border-radius:10px; border: 2px solid #FFEEBA; margin-bottom:20px;">
+                    <h4 style="color:#856404; margin:0; font-family:sans-serif;">🔑 Temporary Password: 
+                        <span style="background-color:#FFFF00; color:black; padding:4px 8px; border-radius:4px; font-weight:bold; border:1px solid #d4d400;">{common_pwd}</span>
                     </h4>
+                    <small style="color:#856404;">Copy this password for all newly created users.</small>
                 </div>
                 """, 
                 unsafe_allow_html=True
             )
-
 
             final_df = pd.DataFrame(tracking_list).drop(columns=['B_ID'])
             st.table(final_df)
