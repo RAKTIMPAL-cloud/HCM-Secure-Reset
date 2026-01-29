@@ -14,9 +14,15 @@ st.title("👤 Oracle HCM: Bulk User & Role Management")
 # --- Functions ---
 
 def generate_secure_password(length=12):
+    """Generates a random secure password meeting Oracle complexity requirements."""
     alphabet = string.ascii_letters + string.digits + "!#$%"
-    pwd = [secrets.choice(string.ascii_uppercase), secrets.choice(string.choice(string.ascii_lowercase)),
-           secrets.choice(string.digits), secrets.choice("!#$%")]
+    # FIX: Removed the extra 'string.choice' call that caused the AttributeError
+    pwd = [
+        secrets.choice(string.ascii_uppercase), 
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.digits), 
+        secrets.choice("!#$%")
+    ]
     pwd += [secrets.choice(alphabet) for _ in range(length - 4)]
     secrets.SystemRandom().shuffle(pwd)
     return "".join(pwd)
@@ -84,13 +90,12 @@ with col1:
 with col2:
     st.subheader("📁 Data")
     
-    # Template Generation Logic
+    # Template Generation
     template_df = pd.DataFrame(columns=['USER NAME', 'FIRST NAME', 'LAST NAME', 'WORK EMAIL', 'ROLE TO BE ASSIGNED'])
     tmp_buff = BytesIO()
     with pd.ExcelWriter(tmp_buff, engine='xlsxwriter') as writer:
         template_df.to_excel(writer, index=False)
     
-    # Download and Upload Buttons
     st.download_button(
         label="📥 Download Template",
         data=tmp_buff.getvalue(),
@@ -130,7 +135,7 @@ if st.button("🚀 Process Bulk Operations"):
             if isinstance(u_res, str):
                 st.error(f"Connection Failed: {u_res}")
             elif u_res.status_code == 401: st.error("❌ 401 Unauthorized: Invalid Credentials")
-            elif u_res.status_code == 403: st.error("❌ 403 Forbidden: Check URL or Admin Permissions")
+            elif u_res.status_code == 403: st.error("❌ 403 Forbidden: Check URL or Permissions")
             elif u_res.status_code == 400: st.error("❌ 400 Bad Request: Payload Error")
             elif u_res.status_code in [200, 201]:
                 for op in u_res.json().get("Operations", []):
@@ -181,14 +186,14 @@ if st.button("🚀 Process Bulk Operations"):
             st.divider()
             st.subheader("📋 Final Execution Summary")
             
-            # Highlighted Password Block
+            # HIGHLIGHTED PASSWORD BLOCK
             st.markdown(
                 f"""
                 <div style="background-color:#FFF3CD; padding:15px; border-radius:10px; border: 2px solid #FFEEBA; margin-bottom:20px;">
                     <h4 style="color:#856404; margin:0; font-family:sans-serif;">🔑 Temporary Password: 
                         <span style="background-color:#FFFF00; color:black; padding:4px 8px; border-radius:4px; font-weight:bold; border:1px solid #d4d400;">{common_pwd}</span>
                     </h4>
-                    <small style="color:#856404;">Copy this password for all newly created users.</small>
+                    <p style="color:#856404; margin-top:5px; font-size:0.9rem;">Copy this password for all newly created users.</p>
                 </div>
                 """, 
                 unsafe_allow_html=True
@@ -198,8 +203,11 @@ if st.button("🚀 Process Bulk Operations"):
             st.table(final_df)
             
             with st.expander("🛠️ View Raw API Response (Debug)"):
-                st.json(r_res.json() if 'r_res' in locals() else {"info": "No roles processed"})
+                if 'r_res' in locals() and hasattr(r_res, 'json'):
+                    st.json(r_res.json())
+                else:
+                    st.write("No API response data available.")
         else:
-            st.error("🚨 Error: Could not retrieve GUIDs. Ensure usernames/roles match Oracle case-sensitivity.")
+            st.error("🚨 Error: Could not retrieve GUIDs from Oracle. Please verify the BIP report path and your permissions.")
 
 st.markdown("<hr><center>Developed by <b>Raktim Pal</b></center>", unsafe_allow_html=True)
