@@ -168,8 +168,20 @@ if st.button("🚀 Process Bulk Operations"):
             # --- DISPLAY RESULTS ---
             st.divider()
             st.subheader("📋 Final Execution Summary")
-            st.info(f"🔑 Temporary Password: `{common_pwd}`")
-            
+            #st.info(f"🔑 Temporary Password: `{common_pwd}`")
+            # Replace your current password display line with this:
+            st.markdown(
+                f"""
+                <div style="background-color:#FFF3CD; padding:10px; border-radius:10px; border: 2px solid #FFEEBA;">
+                    <h4 style="color:#856404; margin:0;">🔑 Temporary Password: 
+                        <span style="background-color:#FFFF00; color:black; padding:2px 5px; border-radius:4px;">{common_pwd}</span>
+                    </h4>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
+
+
             final_df = pd.DataFrame(tracking_list).drop(columns=['B_ID'])
             st.table(final_df)
             
