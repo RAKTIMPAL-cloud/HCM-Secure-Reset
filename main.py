@@ -193,7 +193,7 @@ if st.button("🚀 Process Bulk Operations"):
                     <h4 style="color:#856404; margin:0; font-family:sans-serif;">🔑 Temporary Password: 
                         <span style="background-color:#FFFF00; color:black; padding:4px 8px; border-radius:4px; font-weight:bold; border:1px solid #d4d400;">{common_pwd}</span>
                     </h4>
-                    <p style="color:#856404; margin-top:5px; font-size:0.9rem;">Copy this password for all newly created users.</p>
+                    <p style="color:#856404; margin-top:5px; font-size:0.9rem;">Copy this password for all newly created users. Don't use this password for "Already Exists" users</p>
                 </div>
                 """, 
                 unsafe_allow_html=True
