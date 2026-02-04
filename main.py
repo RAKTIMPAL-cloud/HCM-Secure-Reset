@@ -21,9 +21,9 @@ st.title("👤 Oracle HCM: Bulk User & Role Management")
 # Add the hyperlink just below the title
 st.markdown("""
 <div style='font-size: 20px; margin-bottom: 20px;'>
-    🔗 For bulk password reset of the users, 
+    [NOTE- 🔗 For bulk password reset of the users, click 
     <a href='https://hcm-password-reset.streamlit.app/' target='_blank' style='color: yellow; font-weight: bold; text-decoration: underline;'>
-        click here
+         Oracle HCM SecureReset Pro
     </a>
 </div>
 """, unsafe_allow_html=True)
