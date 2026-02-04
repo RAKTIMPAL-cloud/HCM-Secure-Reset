@@ -217,4 +217,11 @@ if st.button("🚀 Process Bulk Operations"):
         else:
             st.error("🚨 Error: Could not retrieve GUIDs from Oracle. Please verify the BIP report path and your permissions.")
 
-st.markdown("<hr><center>Developed by <b>Raktim Pal</b></center>", unsafe_allow_html=True)
+# Footer
+st.markdown("""
+<hr style="margin-top: 50px;">
+<div style='text-align: center; color: yellow; font-size: 0.85em;'>
+    <p>App has been developed by <strong>Raktim Pal</strong></p>
+    <p>© 2026 Raktim Pal. All rights reserved.</p>
+</div>
+""", unsafe_allow_html=True)
