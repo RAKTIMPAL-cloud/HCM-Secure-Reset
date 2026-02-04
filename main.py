@@ -9,6 +9,13 @@ import secrets
 
 # --- App Configuration ---
 st.set_page_config(page_title="Oracle HCM Smart Creator", layout="wide")
+# --- Logo Header Section ---
+log_col1, log_col2, log_col3 = st.columns([1, 4, 1])
+with log_col1:
+    st.image("https://upload.wikimedia.org/wikipedia/commons/5/50/Oracle_logo.svg", width=150)
+with log_col3:
+    st.image("https://www.ibm.com/brand/experience-guides/developer/8f4e3cc2b5d52354a6d43c8edba1e3c9/02_8-bar-reverse.svg", width=120)
+
 st.title("👤 Oracle HCM: Bulk User & Role Management")
 
 # --- Functions ---
