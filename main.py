@@ -16,7 +16,7 @@ with log_col1:
 with log_col3:
     st.image("https://www.ibm.com/brand/experience-guides/developer/8f4e3cc2b5d52354a6d43c8edba1e3c9/02_8-bar-reverse.svg", width=120)
 
-st.title("👤 Oracle HCM: Bulk User & Role Management")
+st.title("👤 SkyGate CloudVault: Oracle HCM Bulk User & Role Management Tool")
 
 # Add the hyperlink just below the title
 st.markdown("""
